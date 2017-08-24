@@ -3,10 +3,13 @@ Notes on the application of priors:
 1) Prior information is obtained as a number
 2) It is then scaled to between 0.005 and 0.995. It is not scaled to 0-1 to avoid issues with having priors of 0. By keeping the bottom slightly above 0 we preserve the ability of strong observed information to survive very low priors.
 3) The scaled values are inverted by subtracting them from 1. This is because the empirical bayes formula requires the "probability" that an edge is NOT present.
+4) All edges are given a uniform base prior of 0.005, and if a prior exists for an edge, it is added to this base value. Thus final priors can be between 0.005 and 1.
 
 Note that scaling the priors does not affect the outcome of the inference as only relative values matter. Applying a prior of 20 to one edge and 10 to the other is the same as applying 2 and 1 respectively.
 
-"""
+Note that this method of using priors treats any STRING evidence as positive, so even a low STRING score is some evidence for existence and is better than no STRING score.
+Thus edges can be improved by priors, but not penalized by them.
+""";
 
 
 using NetworkInference
@@ -100,7 +103,7 @@ for i in 1:size(ppi_mat, 1)
   edge_dict[k] = ppi_mat[i, 3]
 end
 
-scale_prior(pv, mv) =  (((pv/mv) - 0.5)*0.9)+0.5 # Scales prior between 0.005 and 0.995
+scale_prior(pv, mv) =  (((pv/mv) - 0.5)*0.99)+0.5 # Scales prior between 0.005 and 0.995
 scale_and_invert_prior(pv, mv) = 1 - scale_prior(pv, mv) # inverts prior
 
 # Normalize values
@@ -119,12 +122,39 @@ id_dict = read_aliases_rev(alias_filepath)
 ############ Grab single_cell_data
 sc_filepath = "/cluster/home/avp16/Desktop/data/kirsten_data/kirsten_sc_data.csv"
 
-getPrior(e) = get(name_dict, e, 1) # Grabs the prior value for an edge, or 1 if it doesnt exist
-getPrior(e) = get(edge_dict, edgeToIdKey(e, name_dict), 1) # Grabs the prior value for an edge, or 1 if it doesnt exist
+getPrior(e) = get(edge_dict, edgeToIdKey(e, name_dict), 0) + 0.005 # Grabs the prior value + 0.005 for an edge, or 0.005 if it doesnt exist
 
 sc_genes = get_genes(sc_filepath, delim=',', discretizer="uniform_width")
+
 na_mi = NetworkAnalysis(MINetworkInference(), sc_genes)
 f0mi, fhmi = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=MINetworkInference())
 fdrs_mi = get_fdrs(na_mi, f0mi, fhmi)
-# emp_bayes_mi = map(e->Edge(e.genes, 1-e.confidence*edge_dict[edgeToIdKey(e, name_dict)]), fdrs_mi)
-# bayes_na_mi = NetworkAnalysis(sc_genes, emp_bayes_mi)
+emp_bayes_mi = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_mi)
+bayes_na_mi = NetworkAnalysis(sc_genes, emp_bayes_mi)
+
+na_clr = NetworkAnalysis(CLRNetworkInference(), sc_genes)
+f0clr, fhclr = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=CLRNetworkInference())
+fdrs_clr = get_fdrs(na_clr, f0clr, fhclr)
+emp_bayes_clr = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_clr)
+bayes_na_clr = NetworkAnalysis(sc_genes, emp_bayes_clr)
+
+na_puc = NetworkAnalysis(PUCNetworkInference(), sc_genes)
+f0puc, fhpuc = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=PUCNetworkInference())
+fdrs_puc = get_fdrs(na_puc, f0puc, fhpuc)
+emp_bayes_puc = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_puc)
+bayes_na_puc = NetworkAnalysis(sc_genes, emp_bayes_puc)
+
+na_pidc = NetworkAnalysis(PIDCNetworkInference(), sc_genes)
+f0pidc, fhpidc = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=PIDCNetworkInference())
+fdrs_pidc = get_fdrs(na_pidc, f0pidc, fhpidc)
+emp_bayes_pidc = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_pidc)
+bayes_na_pidc = NetworkAnalysis(sc_genes, emp_bayes_pidc)
+
+inf_types = ["MI", "CLR", "PUC", "PIDC"]
+asst_label_path = "/cluster/home/avp16/Desktop/data/assortativity_measure/GeneLists_cell_cycle_pluripotency.tsv"
+asst_bayes = [assortativity(na, 0.05, asst_label_path)[end] for na in [bayes_na_mi, bayes_na_clr, bayes_na_puc, bayes_na_pidc]]
+figure()
+title("Assortativity for single cell data using STRING scores as priors\nKirsten Data")
+bar(inf_types, asst_bayes)
+ylabel("Assortativity")
+xlabel("Information Measure")
