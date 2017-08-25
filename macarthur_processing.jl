@@ -39,7 +39,7 @@ datapath_pop = "/cluster/home/avp16/Desktop/data/macarthur_data/macarthur_matche
 genes_sc = get_genes(datapath_sc, discretizer="uniform_width")
 genes_pop = get_genes(datapath_pop, discretizer="uniform_width")
 
-asst_label_path = ""
+asst_label_path = "/cluster/home/avp16/Desktop/data/macarthur_data/macarthur_gene_symbols.tsv"
 
 
 
@@ -80,7 +80,7 @@ function assortativity_pure()
 end
 
 ####### Assortativity for bayes networks - using pop as priors for sc:
-function assortativity_sc_base_pop_prior()
+function assortativity_sc_base_pop_priors()
     distrs = [
         get_f0_and_fhat_distrs(datapath_sc, discretizer="uniform_width", method=MINetworkInference()),
         get_f0_and_fhat_distrs(datapath_sc, discretizer="uniform_width", method=CLRNetworkInference()),
@@ -165,8 +165,3 @@ function assortativity_pop_base_sc_priors()
     ylabel("Assortativity")
     xlabel("Information Measure")
 end
-
-
-assortativity_pure()
-assortativity_sc_base_pop_priors()
-assortativity_pop_base_sc_priors()
