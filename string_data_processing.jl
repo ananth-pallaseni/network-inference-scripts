@@ -23,7 +23,7 @@ using Assortativity
 
 raw_data_filepath = "/cluster/home/avp16/Desktop/data/string_data_mouse/mouse_protein_network_data_raw.txt"
 data_filepath = "/cluster/home/avp16/Desktop/data/string_data_mouse/mouse_protein_network_data.txt"
-
+alias_filepath = "/cluster/home/avp16/Desktop/data/string_data_mouse/mouse_protein_to_gene_aliases_uniprot_only.txt"
 
 
 
@@ -111,7 +111,6 @@ max_prior_val = maximum(values(edge_dict))
 edge_dict = map(kv->Pair(kv[1], scale_and_invert_prior(kv[2], max_prior_val)), edge_dict) # All edge confidences are now inverted and scaled between [0.505, 1.495]
 
 ############ Create name dictionary, mapping from name->id
-alias_filepath = "/cluster/home/avp16/Desktop/data/string_data_mouse/mouse_protein_to_gene_aliases_uniprot_only.txt"
 
 # name dict maps from name->id
 name_dict = read_aliases(alias_filepath)
@@ -119,42 +118,69 @@ name_dict = read_aliases(alias_filepath)
 # maps from id -> name
 id_dict = read_aliases_rev(alias_filepath)
 
-############ Grab single_cell_data
-sc_filepath = "/cluster/home/avp16/Desktop/data/kirsten_data/kirsten_sc_data.csv"
-
+# Maps from edge to prior value
 getPrior(e) = get(edge_dict, edgeToIdKey(e, name_dict), 0) + 0.005 # Grabs the prior value + 0.005 for an edge, or 0.005 if it doesnt exist
 
-sc_genes = get_genes(sc_filepath, delim=',', discretizer="uniform_width")
 
-na_mi = NetworkAnalysis(MINetworkInference(), sc_genes)
-f0mi, fhmi = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=MINetworkInference())
-fdrs_mi = get_fdrs(na_mi, f0mi, fhmi)
-emp_bayes_mi = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_mi)
-bayes_na_mi = NetworkAnalysis(sc_genes, emp_bayes_mi)
 
-na_clr = NetworkAnalysis(CLRNetworkInference(), sc_genes)
-f0clr, fhclr = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=CLRNetworkInference())
-fdrs_clr = get_fdrs(na_clr, f0clr, fhclr)
-emp_bayes_clr = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_clr)
-bayes_na_clr = NetworkAnalysis(sc_genes, emp_bayes_clr)
+function create_bayes_networks(sc_filepath; delim=false, discretizer="bayesian_blocks")
+  sc_genes = get_genes(sc_filepath, delim=delim, discretizer=discretizer)
 
-na_puc = NetworkAnalysis(PUCNetworkInference(), sc_genes)
-f0puc, fhpuc = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=PUCNetworkInference())
-fdrs_puc = get_fdrs(na_puc, f0puc, fhpuc)
-emp_bayes_puc = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_puc)
-bayes_na_puc = NetworkAnalysis(sc_genes, emp_bayes_puc)
+  na_mi = NetworkAnalysis(MINetworkInference(), sc_genes)
+  f0mi, fhmi = get_f0_and_fhat_distrs(sc_filepath, delim=delim, discretizer=discretizer, method=MINetworkInference())
+  fdrs_mi = get_fdrs(na_mi, f0mi, fhmi)
+  emp_bayes_mi = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_mi)
+  emp_bayes_mi = sort(emp_bayes_mi, by=e->e.confidence, rev=true)
+  bayes_na_mi = NetworkAnalysis(sc_genes, emp_bayes_mi)
 
-na_pidc = NetworkAnalysis(PIDCNetworkInference(), sc_genes)
-f0pidc, fhpidc = get_f0_and_fhat_distrs(sc_filepath, delim=',', discretizer="uniform_width", method=PIDCNetworkInference())
-fdrs_pidc = get_fdrs(na_pidc, f0pidc, fhpidc)
-emp_bayes_pidc = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_pidc)
-bayes_na_pidc = NetworkAnalysis(sc_genes, emp_bayes_pidc)
+  na_clr = NetworkAnalysis(CLRNetworkInference(), sc_genes)
+  f0clr, fhclr = get_f0_and_fhat_distrs(sc_filepath, delim=delim, discretizer=discretizer, method=CLRNetworkInference())
+  fdrs_clr = get_fdrs(na_clr, f0clr, fhclr)
+  emp_bayes_clr = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_clr)
+  emp_bayes_clr = sort(emp_bayes_clr, by=e->e.confidence, rev=true)
+  bayes_na_clr = NetworkAnalysis(sc_genes, emp_bayes_clr)
 
-inf_types = ["MI", "CLR", "PUC", "PIDC"]
-asst_label_path = "/cluster/home/avp16/Desktop/data/assortativity_measure/GeneLists_cell_cycle_pluripotency.tsv"
-asst_bayes = [assortativity(na, 0.05, asst_label_path)[end] for na in [bayes_na_mi, bayes_na_clr, bayes_na_puc, bayes_na_pidc]]
-figure()
-title("Assortativity for single cell data using STRING scores as priors\nKirsten Data")
-bar(inf_types, asst_bayes)
-ylabel("Assortativity")
-xlabel("Information Measure")
+  na_puc = NetworkAnalysis(PUCNetworkInference(), sc_genes)
+  f0puc, fhpuc = get_f0_and_fhat_distrs(sc_filepath, delim=delim, discretizer=discretizer, method=PUCNetworkInference())
+  fdrs_puc = get_fdrs(na_puc, f0puc, fhpuc)
+  emp_bayes_puc = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_puc)
+  emp_bayes_puc = sort(emp_bayes_puc, by=e->e.confidence, rev=true)
+  bayes_na_puc = NetworkAnalysis(sc_genes, emp_bayes_puc)
+
+  na_pidc = NetworkAnalysis(PIDCNetworkInference(), sc_genes)
+  f0pidc, fhpidc = get_f0_and_fhat_distrs(sc_filepath, delim=delim, discretizer=discretizer, method=PIDCNetworkInference())
+  fdrs_pidc = get_fdrs(na_pidc, f0pidc, fhpidc)
+  emp_bayes_pidc = map(e->Edge(e.genes, 1-e.confidence*getPrior(e)), fdrs_pidc)
+  emp_bayes_pidc = sort(emp_bayes_pidc, by=e->e.confidence, rev=true)
+  bayes_na_pidc = NetworkAnalysis(sc_genes, emp_bayes_pidc)
+
+  return [bayes_na_mi, bayes_na_clr, bayes_na_puc, bayes_na_pidc]
+end
+
+function plot_assortativity_graphs(label_path, na_lst)
+  inf_types = ["MI", "CLR", "PUC", "PIDC"]
+  asst_bayes = [assortativity(na, 0.05, label_path)[end] for na in na_lst]
+  figure()
+  title("Assortativity for single cell data using STRING scores as priors\nKirsten Data")
+  bar(inf_types, asst_bayes)
+  ylabel("Assortativity")
+  xlabel("Information Measure")
+end
+
+
+
+function run_kirsten_data()
+  sc_filepath = "/cluster/home/avp16/Desktop/data/kirsten_data/kirsten_sc_data.csv"
+  asst_label_path = "/cluster/home/avp16/Desktop/data/assortativity_measure/GeneLists_cell_cycle_pluripotency.tsv"
+  na_lst = create_bayes_networks(sc_filepath, delim=',', discretizer="uniform_width")
+  plot_assortativity_graphs(asst_label_path, na_lst)
+end
+
+
+# Doesn't work at the moment -- issues with gene labelling
+function run_macarthur_data()
+  sc_filepath = "/cluster/home/avp16/Desktop/data/macarthur_data/macarthur_matched_filtered_sc_data.txt"
+  asst_label_path = "/cluster/home/avp16/Desktop/data/macarthur_data/macarthur_gene_symbols.tsv"
+  na_lst = create_bayes_networks(sc_filepath, discretizer="uniform_width")
+  plot_assortativity_graphs(asst_label_path, na_lst)
+end
